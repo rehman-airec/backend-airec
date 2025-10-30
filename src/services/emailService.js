@@ -1,17 +1,33 @@
 const nodemailer = require('nodemailer');
+const dotenv = require('dotenv');
+const formData = require('form-data');
+const Mailgun = require('mailgun.js');
+dotenv.config();
 
 class EmailService {
   constructor() {
     this.transporter = null;
+    this.mailgunClient = null;
     this.initializeTransporter();
   }
 
   initializeTransporter() {
-    // For development, we'll use a simple console logger
-    // In production, you would configure with actual SMTP settings
+    const driver = (process.env.MAIL_DRIVER || '').toLowerCase();
+    if (driver === 'mailgun') {
+      const mg = new Mailgun(formData);
+      this.mailgunClient = mg.client({
+        username: 'api',
+        key: process.env.MAILGUN_SECRET,
+        url: process.env.MAILGUN_API_BASE || 'https://api.mailgun.net'
+      });
+      console.log('Mail driver: Mailgun API');
+      return;
+    }
+
+    // Default SMTP (fallback)
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT,
+      host: process.env.SMTP_HOST || process.env.MAIL_HOST,
+      port: process.env.SMTP_PORT || process.env.MAIL_PORT,
       secure: false,
       auth: {
         user: process.env.SMTP_USER,
@@ -19,25 +35,72 @@ class EmailService {
       }
     });
 
-    // Verify connection configuration
-    this.transporter.verify((error, success) => {
-      if (error) {
-        console.log('Email service not configured:', error.message);
-        console.log('Using console logging for email notifications');
-      } else {
-        console.log('Email service ready to send messages');
+    console.log(
+      {
+        host: process.env.SMTP_HOST,
+        port: process.env.SMTP_PORT,
+        secure: false,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        }
       }
-    });
+    )
+
+
+    // var transport = nodemailer.createTransport({
+    //   host: "sandbox.smtp.mailtrap.io",
+    //   port: 2525,
+    //   auth: {
+    //     user: "7c579866cd5904",
+    //     pass: "****0f22"
+    //   }
+    // });
+
+
+    // Verify connection configuration
+    if (this.transporter) {
+      this.transporter.verify((error, success) => {
+        if (error) {
+          console.log('Email SMTP not configured:', error.message);
+          console.log('Using console logging for email notifications');
+        } else {
+          console.log('SMTP email service ready');
+        }
+      });
+    }
   }
 
   async sendEmail(to, subject, html, text = null) {
     try {
+      const companyName = process.env.COMPANY_NAME;
+      const platformUrl = process.env.FRONTEND_URL;
+      const finalHtml = this.buildEmailHtml(html, companyName, platformUrl);
+      const from = process.env.SMTP_FROM || process.env.MAIL_FROM_ADDRESS || process.env.MAIL_FROM;
+
+      // MAILGUN via API
+      if ((process.env.MAIL_DRIVER || '').toLowerCase() === 'mailgun' && this.mailgunClient) {
+        if (!process.env.MAILGUN_DOMAIN) {
+          console.log('Mailgun domain not set, falling back to console log');
+        } else {
+          const result = await this.mailgunClient.messages.create(process.env.MAILGUN_DOMAIN, {
+            from: `${process.env.MAIL_FROM_NAME || 'Notifications'} <${from}>`,
+            to: Array.isArray(to) ? to : [to],
+            subject,
+            html: finalHtml,
+            text: text || this.stripHtml(finalHtml),
+          });
+          console.log('Mailgun email sent:', result?.id || 'ok');
+          return { success: true, messageId: result?.id || 'mailgun' };
+        }
+      }
+
       const mailOptions = {
-        from: process.env.SMTP_FROM,
+        from,
         to,
         subject,
-        html,
-        text: text || this.stripHtml(html)
+        html: finalHtml,
+        text: text || this.stripHtml(finalHtml)
       };
 
       // If email service is not configured, log to console
@@ -118,12 +181,39 @@ class EmailService {
   // Send email with calendar invite attachment
   async sendEmailWithCalendarInvite(to, subject, html, calendarInvite, text = null) {
     try {
+      const companyName = process.env.COMPANY_NAME || 'Company';
+      const platformUrl = process.env.FRONTEND_URL || '#';
+      const finalHtml = this.buildEmailHtml(html, companyName, platformUrl);
+      const from = process.env.SMTP_FROM || process.env.MAIL_FROM_ADDRESS || process.env.MAIL_FROM;
+
+      // MAILGUN with attachment
+      if ((process.env.MAIL_DRIVER || '').toLowerCase() === 'mailgun' && this.mailgunClient) {
+        if (!process.env.MAILGUN_DOMAIN) {
+          console.log('Mailgun domain not set, falling back to console log');
+        } else {
+          const result = await this.mailgunClient.messages.create(process.env.MAILGUN_DOMAIN, {
+            from: `${process.env.MAIL_FROM_NAME || 'Notifications'} <${from}>`,
+            to: Array.isArray(to) ? to : [to],
+            subject,
+            html: finalHtml,
+            text: text || this.stripHtml(finalHtml),
+            attachment: [{
+              filename: 'invite.ics',
+              data: Buffer.from(calendarInvite),
+              contentType: 'text/calendar; method=REQUEST; charset=UTF-8'
+            }]
+          });
+          console.log('Mailgun email with invite sent:', result?.id || 'ok');
+          return { success: true, messageId: result?.id || 'mailgun' };
+        }
+      }
+
       const mailOptions = {
-        from: process.env.SMTP_FROM,
+        from,
         to,
         subject,
-        html,
-        text: text || this.stripHtml(html),
+        html: finalHtml,
+        text: text || this.stripHtml(finalHtml),
         attachments: [
           {
             filename: 'invite.ics',
@@ -150,6 +240,31 @@ class EmailService {
       console.error('Failed to send email with calendar invite:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  // Append standardized footer (auto-generated disclaimer, platform link, signature and delivered via)
+  buildEmailHtml(originalHtml, companyName, platformUrl) {
+    const footer = `
+      <div style="margin-top:24px; padding-top:16px; border-top:1px solid #e5e7eb; color:#6b7280; font-size:12px; line-height:1.6;">
+        <p style="margin:0 0 8px 0;">
+          This is an <strong>AUTO-GENERATED</strong> message. <strong>PLEASE DO NOT RESPOND (REPLY)</strong> as your response will not reach the desired individual.
+        </p>
+        <p style="margin:0 0 8px 0;">
+          For queries, please visit the platform: <a href="${platformUrl}" style="color:#2563eb; text-decoration:none;">${platformUrl}</a>
+        </p>
+        <p style="margin:0 0 8px 0;">— Team ${companyName}</p>
+        <p style="margin:8px 0 0 0; font-size:11px; color:#9ca3af;">Delivered via airec.io</p>
+      </div>
+    `;
+
+    // If original HTML already contains closing container, just append footer before end
+    try {
+      if (typeof originalHtml === 'string' && originalHtml.includes('</div>')) {
+        return originalHtml.replace(/<\/div>\s*<\/div>\s*$/i, (match) => `${footer}${match}`);
+      }
+    } catch {}
+
+    return `${originalHtml}\n${footer}`;
   }
 
   generateApplicationConfirmationEmail(candidateName, jobTitle, trackingToken, frontendUrl) {
@@ -305,6 +420,68 @@ class EmailService {
             </p>
           </div>
           
+          <div style="background-color: #f3f4f6; padding: 20px; text-align: center; color: #6b7280; font-size: 14px;">
+            <p style="margin: 0;">
+              This is an automated message. Please do not reply to this email.
+            </p>
+          </div>
+        </div>
+      `
+    };
+  }
+
+  // Status update email for registered candidates (links to authenticated portal)
+  generateStatusUpdateEmailForRegistered(candidateName, jobTitle, newStatus, applicationId, frontendUrl) {
+    const linkUrl = `${frontendUrl}/candidate/applications/${applicationId}`;
+    const statusMessages = {
+      'In Review': 'Your application is now being reviewed by our hiring team.',
+      'Interview': 'Congratulations! You have been selected for an interview.',
+      'Offer': 'Great news! We would like to extend an offer to you.',
+      'Hired': 'Congratulations! You have been hired for this position.',
+      'Rejected': 'Thank you for your interest. Unfortunately, we have decided to move forward with other candidates.'
+    };
+
+    const statusColors = {
+      'In Review': '#3B82F6',
+      'Interview': '#10B981',
+      'Offer': '#F59E0B',
+      'Hired': '#10B981',
+      'Rejected': '#EF4444'
+    };
+
+    const statusColor = statusColors[newStatus] || '#3B82F6';
+    const statusMessage = statusMessages[newStatus] || 'Your application status has been updated.';
+
+    return {
+      subject: `Application Status Update - ${jobTitle}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: ${statusColor}; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0;">Application Status Update</h1>
+          </div>
+          <div style="padding: 30px; background-color: #f9fafb;">
+            <h2 style="color: #1f2937; margin-bottom: 20px;">Hello ${candidateName},</h2>
+            <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
+              We have an update regarding your application for the <strong>${jobTitle}</strong> position.
+            </p>
+            <div style="background-color: white; padding: 20px; border-radius: 8px; border-left: 4px solid ${statusColor}; margin: 20px 0;">
+              <h3 style="color: #1f2937; margin-top: 0;">Status: ${newStatus}</h3>
+              <p style="color: #4b5563; margin-bottom: 15px;">
+                ${statusMessage}
+              </p>
+              <a href="${linkUrl}" 
+                 style="display: inline-block; background-color: ${statusColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                View in Platform
+              </a>
+            </div>
+            <p style="color: #4b5563; line-height: 1.6; margin-top: 30px;">
+              You may be asked to log in to view the details.
+            </p>
+            <p style="color: #4b5563; margin-top: 30px;">
+              Best regards,<br>
+              The Recruitment Team
+            </p>
+          </div>
           <div style="background-color: #f3f4f6; padding: 20px; text-align: center; color: #6b7280; font-size: 14px;">
             <p style="margin: 0;">
               This is an automated message. Please do not reply to this email.

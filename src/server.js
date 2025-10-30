@@ -1,4 +1,5 @@
 const express = require('express');
+const http = require('http');
 const compression = require('compression');
 const morgan = require('morgan');
 require('dotenv').config();
@@ -7,11 +8,13 @@ require('dotenv').config();
 const config = require('./config');
 const { connectDB, logger } = require('./config/database');
 
+
 // Import routes from modules
 const authRoutes = require('./modules/auth/auth.route');
 const jobRoutes = require('./modules/jobs/job.route');
 const applicationRoutes = require('./modules/application/application.route');
 const guestApplicationRoutes = require('./modules/guestApplications/guestApplication.route');
+const candidateRoutes = require('./modules/candidates/candidate.route');
 const fileRoutes = require('./modules/files/file.route');
 const profileRoutes = require('./modules/profile/profile.route');
 const cvParsingRoutes = require('./modules/cvParsing/cvParsing.route');
@@ -34,6 +37,8 @@ const {
 } = require('./middleware/security');
 
 const app = express();
+const server = http.createServer(app);
+const { initRealtime } = require('./services/realtime');
 
 // Trust proxy (for rate limiting behind reverse proxy)
 app.set('trust proxy', 1);
@@ -81,6 +86,7 @@ app.use('/api/v1/jobs', jobRoutes);
 app.use('/api/v1/evaluation-templates', require('./modules/jobs/evaluationTemplate.route'));
 app.use('/api/v1/applications', applicationRoutes);
 app.use('/api/v1/guest', guestApplicationRoutes);
+app.use('/api/v1/candidates', candidateRoutes);
 app.use('/api/v1/files', uploadRateLimit, fileUploadSecurity, fileRoutes);
 app.use('/api/v1/profile', generalRateLimit, profileRoutes);
 app.use('/api/v1/cv', uploadRateLimit, fileUploadSecurity, cvParsingRoutes);
@@ -112,7 +118,9 @@ app.get('/api/v1/docs', (req, res) => {
         'POST /api/v1/auth/refresh': 'Refresh token',
         'GET /api/v1/auth/me': 'Get current user',
         'POST /api/v1/auth/logout': 'Logout',
-        'PUT /api/v1/auth/change-password': 'Change password'
+        'PUT /api/v1/auth/change-password': 'Change password',
+        'POST /api/v1/auth/forgot-password': 'Request password reset',
+        'POST /api/v1/auth/reset-password': 'Reset password with token'
       },
       jobs: {
         'GET /api/v1/jobs': 'Get all jobs (public)',
@@ -189,7 +197,10 @@ const startServer = async () => {
     await connectDB();
     
     const PORT = config.port;
-    app.listen(PORT, () => {
+    // init realtime
+    initRealtime(server, config.security.corsOrigin);
+
+    server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT} in ${config.nodeEnv} mode`);
       logger.info(`Health check: http://localhost:${PORT}/api/v1/health`);
       logger.info(`API docs: http://localhost:${PORT}/api/v1/docs`);

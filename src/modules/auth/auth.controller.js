@@ -206,6 +206,39 @@ const changePassword = async (req, res) => {
   }
 };
 
+// Forgot password (request reset link)
+const forgotPassword = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array() });
+    }
+
+    const { email } = req.body;
+    await AuthService.requestPasswordReset(email);
+    res.json({ success: true, message: 'If that email exists, a reset link has been sent' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message || 'Server error' });
+  }
+};
+
+// Reset password (submit new password)
+const resetPassword = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array() });
+    }
+
+    const { token, newPassword } = req.body;
+    await AuthService.resetPassword(token, newPassword);
+    res.json({ success: true, message: 'Password has been reset successfully' });
+  } catch (error) {
+    const status = error.message && error.message.includes('token') ? 400 : 500;
+    res.status(status).json({ success: false, message: error.message || 'Server error' });
+  }
+};
+
 // Get all admins (for hiring team selection)
 const getAllAdmins = async (req, res) => {
   try {
@@ -232,6 +265,8 @@ module.exports = {
   getCurrentUser,
   logout,
   changePassword,
-  getAllAdmins
+  getAllAdmins,
+  forgotPassword,
+  resetPassword
 };
 

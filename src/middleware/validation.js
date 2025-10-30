@@ -399,6 +399,26 @@ const validatePasswordChange = [
     .withMessage('New password must contain at least one lowercase letter, one uppercase letter, and one number')
 ];
 
+// Forgot password validation
+const validateForgotPassword = [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email')
+    .normalizeEmail()
+];
+
+// Reset password validation
+const validateResetPassword = [
+  body('token')
+    .notEmpty()
+    .withMessage('Token is required'),
+  body('newPassword')
+    .isLength({ min: 6 })
+    .withMessage('New password must be at least 6 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('New password must contain at least one lowercase letter, one uppercase letter, and one number')
+];
+
 // Job search validation
 const validateJobSearch = [
   body('q')
@@ -629,6 +649,8 @@ module.exports = {
   validateApplicationStatusUpdate,
   validateBulkApplicationStatusUpdate,
   validatePasswordChange,
+  validateForgotPassword,
+  validateResetPassword,
   validateJobSearch,
   validateFileUpload,
   validateNote,

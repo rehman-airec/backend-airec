@@ -7,7 +7,7 @@ const { Admin, Candidate } = require('../modules/auth/auth.model');
 beforeAll(async () => {
   // Connect to test database
   if (mongoose.connection.readyState === 0) {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/recruitment_test');
+    await mongoose.connect(process.env.MONGODB_URI);
   }
 });
 

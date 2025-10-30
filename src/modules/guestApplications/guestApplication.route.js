@@ -23,13 +23,13 @@ router.post('/jobs/:jobId/apply/guest',
 );
 
 // Get guest application by tracking token (no authentication required)
-router.get('/guest/track/:trackingToken', getGuestApplicationByToken);
+router.get('/track/:trackingToken', getGuestApplicationByToken);
 
 // Get guest applications by email (no authentication required)
-router.get('/guest/applications/:email', getGuestApplicationByEmail);
+router.get('/applications/:email', getGuestApplicationByEmail);
 
 // Convert guest application to user account (no authentication required)
-router.post('/guest/convert-to-user', 
+router.post('/convert-to-user', 
   validateGuestToUserConversion,
   convertGuestToUser
 );

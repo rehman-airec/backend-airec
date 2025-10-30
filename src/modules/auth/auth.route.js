@@ -9,13 +9,17 @@ const {
   getCurrentUser,
   logout,
   changePassword,
-  getAllAdmins
+  getAllAdmins,
+  forgotPassword,
+  resetPassword
 } = require('./auth.controller');
 const {
   validateAdminSignup,
   validateAdminLogin,
   validateCandidateSignup,
-  validateCandidateLogin
+  validateCandidateLogin,
+  validateForgotPassword,
+  validateResetPassword
 } = require('../../middleware/validation');
 const { auth } = require('../../middleware/auth');
 
@@ -38,6 +42,10 @@ router.post('/logout', auth, logout);
 
 // Change password
 router.put('/change-password', auth, changePassword);
+
+// Forgot/Reset password
+router.post('/forgot-password', validateForgotPassword, forgotPassword);
+router.post('/reset-password', validateResetPassword, resetPassword);
 
 // Get all admins (protected, for hiring team selection)
 router.get('/admin/list', auth, getAllAdmins);

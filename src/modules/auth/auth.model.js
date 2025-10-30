@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 // Admin Schema
 const adminSchema = new mongoose.Schema({
@@ -22,6 +23,14 @@ const adminSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Password is required'],
     minlength: [6, 'Password must be at least 6 characters'],
+    select: false
+  },
+  passwordResetToken: {
+    type: String,
+    select: false
+  },
+  passwordResetExpires: {
+    type: Date,
     select: false
   },
   role: {
@@ -81,6 +90,14 @@ const candidateSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Password is required'],
     minlength: [6, 'Password must be at least 6 characters'],
+    select: false
+  },
+  passwordResetToken: {
+    type: String,
+    select: false
+  },
+  passwordResetExpires: {
+    type: Date,
     select: false
   },
   phone: {
@@ -171,6 +188,18 @@ adminSchema.methods.updateLastLogin = function() {
   return this.save();
 };
 
+adminSchema.methods.generatePasswordReset = function() {
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  this.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  this.passwordResetExpires = new Date(Date.now() + 1000 * 60 * 60); // 1 hour
+  return resetToken;
+};
+
+adminSchema.methods.clearPasswordReset = function() {
+  this.passwordResetToken = undefined;
+  this.passwordResetExpires = undefined;
+};
+
 adminSchema.index({ role: 1 });
 adminSchema.index({ isActive: 1 });
 
@@ -200,6 +229,18 @@ candidateSchema.methods.toJSON = function() {
 candidateSchema.methods.updateLastLogin = function() {
   this.lastLogin = new Date();
   return this.save();
+};
+
+candidateSchema.methods.generatePasswordReset = function() {
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  this.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  this.passwordResetExpires = new Date(Date.now() + 1000 * 60 * 60); // 1 hour
+  return resetToken;
+};
+
+candidateSchema.methods.clearPasswordReset = function() {
+  this.passwordResetToken = undefined;
+  this.passwordResetExpires = undefined;
 };
 
 candidateSchema.methods.addSavedJob = function(jobId) {

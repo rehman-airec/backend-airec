@@ -2,6 +2,9 @@ const Admin = require('./auth.model').Admin;
 const Candidate = require('./auth.model').Candidate;
 const JWTService = require('../../services/jwtService');
 const AuthUtils = require('./auth.utils');
+const EmailService = require('../../services/emailService');
+const crypto = require('crypto');
+const config = require('../../config');
 
 /**
  * Auth Service
@@ -178,6 +181,83 @@ class AuthService {
     await user.save();
 
     return true;
+  }
+
+  /**
+   * Request password reset (for both Admin and Candidate)
+   */
+  static async requestPasswordReset(email) {
+    AuthUtils.validateEmail(email);
+
+    // Try finding user in Admin or Candidate collections
+    let user = await Admin.findOne({ email });
+    let userType = 'admin';
+    if (!user) {
+      user = await Candidate.findOne({ email });
+      userType = user ? 'candidate' : null;
+    }
+
+    // Always respond success to avoid email enumeration
+    if (!user) {
+      return { success: true };
+    }
+
+    const resetToken = user.generatePasswordReset();
+    await user.save({ validateBeforeSave: false });
+
+    const frontendUrl = process.env.FRONTEND_URL || config.security.corsOrigin || '';
+    const resetUrl = `${frontendUrl}/auth/reset-password?token=${resetToken}`;
+
+    const subject = 'Password Reset Request';
+    const html = `
+      <div style="font-family: Arial, sans-serif;">
+        <h2>Password Reset</h2>
+        <p>You requested to reset your password. Click the link below to proceed:</p>
+        <p><a href="${resetUrl}" style="display:inline-block;padding:10px 16px;background:#3B82F6;color:#fff;text-decoration:none;border-radius:6px;">Reset Password</a></p>
+        <p>If the button doesn't work, copy and paste this URL into your browser:</p>
+        <p>${resetUrl}</p>
+        <p>This link will expire in 1 hour.</p>
+        <p>If you did not request this, please ignore this email.</p>
+      </div>
+    `;
+
+    await EmailService.sendEmail(user.email, subject, html);
+    return { success: true, userType };
+  }
+
+  /**
+   * Reset password using a token
+   */
+  static async resetPassword(token, newPassword) {
+    if (!token) {
+      throw new Error('Reset token is required');
+    }
+    AuthUtils.validatePassword(newPassword);
+
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Look up in Admin first then Candidate
+    let user = await Admin.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: new Date() }
+    }).select('+password');
+
+    if (!user) {
+      user = await Candidate.findOne({
+        passwordResetToken: hashedToken,
+        passwordResetExpires: { $gt: new Date() }
+      }).select('+password');
+    }
+
+    if (!user) {
+      throw new Error('Reset token is invalid or has expired');
+    }
+
+    user.password = newPassword;
+    user.clearPasswordReset();
+    await user.save();
+
+    return { success: true };
   }
 
   // ============ User Operations ============

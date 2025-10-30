@@ -3,6 +3,7 @@ const ApplicationService = require('./application.service');
 const ApplicationUtils = require('./application.utils');
 const EmailService = require('../../services/emailService');
 const GuestApplication = require('../guestApplications/guestApplication.model');
+const { notifyUser } = require('../../services/realtime');
 
 /**
  * Application Controller
@@ -154,12 +155,11 @@ const updateApplicationStatus = async (req, res) => {
 
         if (candidate && job) {
           const frontendUrl = process.env.FRONTEND_URL;
-          const emailTemplate = EmailService.generateStatusUpdateEmail(
+          const emailTemplate = EmailService.generateStatusUpdateEmailForRegistered(
             `${candidate.firstName} ${candidate.lastName}`,
             job.title,
             status,
-            // Registered candidates may not have a tracking token; link to dashboard/applications
-            'registered',
+            application._id,
             frontendUrl
           );
 
@@ -191,6 +191,22 @@ const updateApplicationStatus = async (req, res) => {
         console.error('Failed to send status update email (registered candidate):', emailError);
         // Don't fail the request if email sending fails
       }
+    }
+
+    // Emit realtime notifications
+    try {
+      if (application.candidateId) {
+        notifyUser(String(application.candidateId), {
+          type: 'application_status',
+          title: 'Application Status Updated',
+          message: `Your application status changed to ${status}`,
+          applicationId: String(application._id),
+          status,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (emitErr) {
+      console.error('Failed to emit notification:', emitErr);
     }
 
     // Reload populated application and return a consistent, full response
