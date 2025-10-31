@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const request = require('supertest');
 const app = require('../server');
 const mongoose = require('mongoose');
@@ -10,7 +12,7 @@ const fs = require('fs');
 // Test database setup
 beforeAll(async () => {
   if (mongoose.connection.readyState === 0) {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/recruitment_test');
+    await mongoose.connect(process.env.MONGODB_URI);
   }
 });
 

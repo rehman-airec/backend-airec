@@ -8,7 +8,7 @@ const toInt = (v, d = undefined) => {
 const config = {
   // Server configuration
   port: toInt(process.env.PORT),
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv: process.env.NODE_ENV,
   
   // Database configuration
   mongodb: {
@@ -38,22 +38,17 @@ const config = {
     rateLimitMaxRequests: toInt(process.env.RATE_LIMIT_MAX_REQUESTS),
   },
   
-  // Mail configuration (supports Mailgun API or SMTP)
+  // 📧 Mail configuration — Mailgun only
   mail: {
-    driver: (process.env.MAIL_DRIVER || '').toLowerCase(),
-    fromAddress: process.env.MAIL_FROM_ADDRESS || process.env.SMTP_FROM,
+    driver: (process.env.MAIL_DRIVER).toLowerCase(),
+    fromAddress: process.env.MAIL_FROM_ADDRESS,
     fromName: process.env.MAIL_FROM_NAME,
-    encryption: process.env.MAIL_ENCRYPTION, // e.g. tls
+    companyName: process.env.COMPANY_NAME,
+    frontendUrl: process.env.FRONTEND_URL,
     mailgun: {
       domain: process.env.MAILGUN_DOMAIN,
       secret: process.env.MAILGUN_SECRET,
       apiBase: process.env.MAILGUN_API_BASE,
-    },
-    smtp: {
-      host: process.env.SMTP_HOST || process.env.MAIL_HOST,
-      port: toInt(process.env.SMTP_PORT || process.env.MAIL_PORT),
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
     },
   },
   

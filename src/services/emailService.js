@@ -1,4 +1,3 @@
-const nodemailer = require('nodemailer');
 const dotenv = require('dotenv');
 const formData = require('form-data');
 const Mailgun = require('mailgun.js');
@@ -6,70 +5,33 @@ dotenv.config();
 
 class EmailService {
   constructor() {
-    this.transporter = null;
     this.mailgunClient = null;
-    this.initializeTransporter();
+    this.initializeMailgun();
   }
 
-  initializeTransporter() {
+  initializeMailgun() {
     const driver = (process.env.MAIL_DRIVER || '').toLowerCase();
-    if (driver === 'mailgun') {
-      const mg = new Mailgun(formData);
-      this.mailgunClient = mg.client({
-        username: 'api',
-        key: process.env.MAILGUN_SECRET,
-        url: process.env.MAILGUN_API_BASE || 'https://api.mailgun.net'
-      });
-      console.log('Mail driver: Mailgun API');
+  
+    if (driver !== 'mailgun') {
+      console.warn('⚠️ MAIL_DRIVER is not set to mailgun — emails will log to console only.');
       return;
     }
-
-    // Default SMTP (fallback)
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || process.env.MAIL_HOST,
-      port: process.env.SMTP_PORT || process.env.MAIL_PORT,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      }
-    });
-
-    console.log(
-      {
-        host: process.env.SMTP_HOST,
-        port: process.env.SMTP_PORT,
-        secure: false,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        }
-      }
-    )
-
-
-    // var transport = nodemailer.createTransport({
-    //   host: "sandbox.smtp.mailtrap.io",
-    //   port: 2525,
-    //   auth: {
-    //     user: "7c579866cd5904",
-    //     pass: "****0f22"
-    //   }
-    // });
-
-
-    // Verify connection configuration
-    if (this.transporter) {
-      this.transporter.verify((error, success) => {
-        if (error) {
-          console.log('Email SMTP not configured:', error.message);
-          console.log('Using console logging for email notifications');
-        } else {
-          console.log('SMTP email service ready');
-        }
-      });
+  
+    if (!process.env.MAILGUN_SECRET || !process.env.MAILGUN_DOMAIN) {
+      console.warn('⚠️ Mailgun credentials not found — emails will log to console only.');
+      return;
     }
+  
+    const mg = new Mailgun(formData);
+    this.mailgunClient = mg.client({
+      username: 'api',
+      key: process.env.MAILGUN_SECRET,
+      url: process.env.MAILGUN_API_BASE
+    });
+  
+    console.log('✅ Mailgun API initialized');
   }
+  
 
   async sendEmail(to, subject, html, text = null) {
     try {
@@ -84,7 +46,7 @@ class EmailService {
           console.log('Mailgun domain not set, falling back to console log');
         } else {
           const result = await this.mailgunClient.messages.create(process.env.MAILGUN_DOMAIN, {
-            from: `${process.env.MAIL_FROM_NAME || 'Notifications'} <${from}>`,
+            from: `${process.env.MAIL_FROM_NAME} <${from}>`,
             to: Array.isArray(to) ? to : [to],
             subject,
             html: finalHtml,
@@ -95,27 +57,12 @@ class EmailService {
         }
       }
 
-      const mailOptions = {
-        from,
-        to,
-        subject,
-        html: finalHtml,
-        text: text || this.stripHtml(finalHtml)
-      };
-
-      // If email service is not configured, log to console
-      if (!process.env.SMTP_USER) {
-        console.log('📧 EMAIL NOTIFICATION:');
-        console.log('To:', to);
-        console.log('Subject:', subject);
-        console.log('Content:', text || this.stripHtml(html));
-        console.log('---');
-        return { success: true, messageId: 'console-log' };
-      }
-
-      const result = await this.transporter.sendMail(mailOptions);
-      console.log('Email sent successfully:', result.messageId);
-      return { success: true, messageId: result.messageId };
+      console.log('📧 EMAIL LOG (Mailgun not configured)');
+console.log('To:', to);
+console.log('Subject:', subject);
+console.log('Message:', text || this.stripHtml(finalHtml));
+console.log('---');
+return { success: true, messageId: 'console-log' };
     } catch (error) {
       console.error('Failed to send email:', error);
       return { success: false, error: error.message };
@@ -208,34 +155,15 @@ class EmailService {
         }
       }
 
-      const mailOptions = {
-        from,
-        to,
-        subject,
-        html: finalHtml,
-        text: text || this.stripHtml(finalHtml),
-        attachments: [
-          {
-            filename: 'invite.ics',
-            content: Buffer.from(calendarInvite),
-            contentType: 'text/calendar; method=REQUEST; charset=UTF-8'
-          }
-        ]
-      };
+      console.log('📧 EMAIL WITH CALENDAR INVITE (Mailgun not configured):');
+console.log('To:', to);
+console.log('Subject:', subject);
+console.log('Content:', text || this.stripHtml(html));
+console.log('Calendar Invite:', calendarInvite.substring(0, 200) + '...');
+console.log('---');
+return { success: true, messageId: 'console-log' };
 
-      if (!process.env.SMTP_USER) {
-        console.log('📧 EMAIL WITH CALENDAR INVITE:');
-        console.log('To:', to);
-        console.log('Subject:', subject);
-        console.log('Content:', text || this.stripHtml(html));
-        console.log('Calendar Invite:', calendarInvite.substring(0, 200) + '...');
-        console.log('---');
-        return { success: true, messageId: 'console-log' };
-      }
-
-      const result = await this.transporter.sendMail(mailOptions);
-      console.log('Email with calendar invite sent successfully:', result.messageId);
-      return { success: true, messageId: result.messageId };
+      
     } catch (error) {
       console.error('Failed to send email with calendar invite:', error);
       return { success: false, error: error.message };

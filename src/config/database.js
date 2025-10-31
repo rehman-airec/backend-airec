@@ -1,9 +1,11 @@
+require('dotenv').config();
+
 const mongoose = require('mongoose');
 const winston = require('winston');
 
 // Configure logger
 const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
+  level: process.env.LOG_LEVEL,
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
@@ -21,7 +23,7 @@ const logger = winston.createLogger({
 
 const connectDB = async () => {
   try {
-    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/recruitment';
+    const mongoUri = process.env.MONGODB_URI;
     
     if (!mongoUri) {
       throw new Error('MONGODB_URI environment variable is not defined');

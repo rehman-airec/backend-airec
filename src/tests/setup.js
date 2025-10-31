@@ -1,9 +1,11 @@
+require('dotenv').config();
+
 // Test setup file
 const mongoose = require('mongoose');
 
 // Set test environment
 process.env.NODE_ENV = 'test';
-process.env.MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/recruitment_test';
+process.env.MONGODB_URI = process.env.MONGODB_URI;
 process.env.JWT_SECRET = 'test-jwt-secret';
 process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
 

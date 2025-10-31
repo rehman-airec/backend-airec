@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const jwt = require('jsonwebtoken');
 const { Admin, Candidate } = require('../modules/auth/auth.model');
 

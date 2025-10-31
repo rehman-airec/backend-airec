@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const Admin = require('./auth.model').Admin;
 const Candidate = require('./auth.model').Candidate;
 const JWTService = require('../../services/jwtService');

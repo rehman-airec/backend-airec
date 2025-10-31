@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const Job = require('../jobs/job.model');
 const GuestApplication = require('./guestApplication.model');
 const Application = require('../application/application.model');
@@ -124,7 +126,7 @@ class GuestApplicationUtils {
    */
   static async sendConfirmationEmail(guestApplication, job, firstName, lastName) {
     try {
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const frontendUrl = process.env.FRONTEND_URL;
       const emailTemplate = EmailService.generateApplicationConfirmationEmail(
         `${firstName} ${lastName}`,
         job.title,
