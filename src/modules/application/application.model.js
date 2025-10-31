@@ -167,7 +167,7 @@ const applicationSchema = new mongoose.Schema({
     },
     userRole: {
       type: String,
-      enum: ['Admin', 'Candidate']
+      enum: ['Admin', 'Candidate', 'Guest']
     },
     metadata: {
       type: mongoose.Schema.Types.Mixed
