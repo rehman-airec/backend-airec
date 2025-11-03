@@ -72,15 +72,36 @@ const corsConfig = cors({
       'http://127.0.0.1:3001'
     ];
     
+    // In development, allow any *.localhost subdomain (for multi-tenant testing)
+    // This includes: vision.localhost:3000, company1.localhost:3000, etc.
+    if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV !== 'production') {
+      // Match *.localhost with or without port
+      const localhostPattern = /^https?:\/\/[a-z0-9-]+\.localhost(:\d+)?$/i;
+      if (localhostPattern.test(origin)) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[CORS] Allowing subdomain origin: ${origin}`);
+        }
+        return callback(null, true);
+      }
+      // Also allow localhost without subdomain
+      if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+        return callback(null, true);
+      }
+    }
+    
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      // Log rejected origin for debugging
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[CORS] Rejected origin: ${origin}`);
+      }
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-tenant-subdomain'],
   exposedHeaders: ['X-Total-Count', 'X-Page-Count']
 });
 

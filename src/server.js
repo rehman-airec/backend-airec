@@ -20,9 +20,12 @@ const profileRoutes = require('./modules/profile/profile.route');
 const cvParsingRoutes = require('./modules/cvParsing/cvParsing.route');
 const screeningTemplateRoutes = require('./modules/screeningTemplates/screeningTemplate.route');
 const emailTemplateRoutes = require('./modules/events/emailTemplate.route');
+const tenantRoutes = require('./modules/tenant/tenant.route');
+const notificationRoutes = require('./modules/notifications/notification.route');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
+const tenantFromSubdomain = require('./middleware/tenantFromSubdomain');
 const {
   generalRateLimit,
   authRateLimit,
@@ -42,6 +45,11 @@ const { initRealtime } = require('./services/realtime');
 
 // Trust proxy (for rate limiting behind reverse proxy)
 app.set('trust proxy', 1);
+
+// Multi-tenant middleware - detects tenant from subdomain or header
+// Must be early in the middleware stack to attach tenant context to all requests
+// Non-breaking: continues normally if no tenant found
+app.use(tenantFromSubdomain);
 
 // Security middleware
 app.use(helmetConfig);
@@ -92,6 +100,8 @@ app.use('/api/v1/profile', generalRateLimit, profileRoutes);
 app.use('/api/v1/cv', uploadRateLimit, fileUploadSecurity, cvParsingRoutes);
 app.use('/api/v1/screening-templates', screeningTemplateRoutes);
 app.use('/api/v1/email-templates', emailTemplateRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1', tenantRoutes); // Multi-tenant routes
 
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
@@ -163,6 +173,13 @@ app.get('/api/v1/docs', (req, res) => {
         'POST /api/v1/cv/parse': 'Parse uploaded CV and extract data (no auth)',
         'POST /api/v1/cv/validate': 'Validate CV file format and size (no auth)',
         'GET /api/v1/cv/stats': 'Get CV parsing service statistics (no auth)'
+      },
+      notifications: {
+        'GET /api/v1/notifications': 'Get all notifications for current user (authenticated)',
+        'GET /api/v1/notifications/unread-count': 'Get unread notification count (authenticated)',
+        'PUT /api/v1/notifications/:id/read': 'Mark notification as read (authenticated)',
+        'PUT /api/v1/notifications/read-all': 'Mark all notifications as read (authenticated)',
+        'DELETE /api/v1/notifications/:id': 'Delete notification (authenticated)'
       }
     }
   });

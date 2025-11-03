@@ -11,6 +11,7 @@
     "test:coverage": "jest --coverage",
     "test:ci": "jest --ci --coverage --watchAll=false",
     "create-admin": "node src/scripts/createDefaultAdmin.js",
+    "create-superadmin": "node src/scripts/createSuperAdmin.js",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",

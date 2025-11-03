@@ -2,17 +2,55 @@ const jwt = require('jsonwebtoken');
 const config = require('../config');
 
 class JWTService {
-  static generateAccessToken(userId, userType) {
+  /**
+   * Generate access token with role and tenantId
+   * @param {string} userId - User ID
+   * @param {string} userType - User type ('admin' or 'candidate')
+   * @param {string} role - User role ('superadmin', 'recruiter', 'candidate', 'employee')
+   * @param {string} tenantId - Optional tenant ID
+   */
+  static generateAccessToken(userId, userType, role = null, tenantId = null) {
+    const payload = { userId, userType };
+    
+    // Include role in token if provided
+    if (role) {
+      payload.role = role;
+    }
+    
+    // Include tenantId in token if provided
+    if (tenantId) {
+      payload.tenantId = tenantId;
+    }
+    
     return jwt.sign(
-      { userId, userType },
+      payload,
       config.jwt.secret,
       { expiresIn: config.jwt.expiresIn }
     );
   }
 
-  static generateRefreshToken(userId, userType) {
+  /**
+   * Generate refresh token with role and tenantId
+   * @param {string} userId - User ID
+   * @param {string} userType - User type ('admin' or 'candidate')
+   * @param {string} role - User role ('superadmin', 'recruiter', 'candidate', 'employee')
+   * @param {string} tenantId - Optional tenant ID
+   */
+  static generateRefreshToken(userId, userType, role = null, tenantId = null) {
+    const payload = { userId, userType, type: 'refresh' };
+    
+    // Include role in token if provided
+    if (role) {
+      payload.role = role;
+    }
+    
+    // Include tenantId in token if provided
+    if (tenantId) {
+      payload.tenantId = tenantId;
+    }
+    
     return jwt.sign(
-      { userId, userType, type: 'refresh' },
+      payload,
       config.jwt.refreshSecret,
       { expiresIn: config.jwt.refreshExpiresIn }
     );
@@ -26,10 +64,17 @@ class JWTService {
     return jwt.verify(token, config.jwt.refreshSecret);
   }
 
-  static generateTokenPair(userId, userType) {
+  /**
+   * Generate token pair (access + refresh) with role and tenantId
+   * @param {string} userId - User ID
+   * @param {string} userType - User type ('admin' or 'candidate')
+   * @param {string} role - User role ('superadmin', 'recruiter', 'candidate', 'employee')
+   * @param {string} tenantId - Optional tenant ID
+   */
+  static generateTokenPair(userId, userType, role = null, tenantId = null) {
     return {
-      accessToken: this.generateAccessToken(userId, userType),
-      refreshToken: this.generateRefreshToken(userId, userType),
+      accessToken: this.generateAccessToken(userId, userType, role, tenantId),
+      refreshToken: this.generateRefreshToken(userId, userType, role, tenantId),
       expiresIn: this.getTokenExpiration(config.jwt.expiresIn)
     };
   }

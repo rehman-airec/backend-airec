@@ -1,6 +1,7 @@
 const { validationResult } = require('express-validator');
 const Job = require('./job.model');
 const Application = require('../application/application.model');
+const { ensureTenantId, addTenantFilter } = require('../../utils/tenantQueryHelper');
 
 // Create job (multi-step)
 const createJob = async (req, res) => {
@@ -16,12 +17,26 @@ const createJob = async (req, res) => {
 
     const { step, ...jobData } = req.body;
     
-    // Add creator and set initial status
-    const job = await Job.create({
-      ...jobData,
+    // Ensure tenant context exists for job creation
+    if (!req.tenant || !req.tenantId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing tenant context. Job creation requires tenant identification.'
+      });
+    }
+
+    // Prevent tenantId from being set by frontend - always use from request context
+    const sanitizedJobData = { ...jobData };
+    delete sanitizedJobData.tenantId; // Remove if present in payload
+
+    // Add creator, tenantId (from request context), and set initial status
+    const jobWithTenant = ensureTenantId({
+      ...sanitizedJobData,
       createdBy: req.user._id,
       status: 'draft'
-    });
+    }, req);
+    
+    const job = await Job.create(jobWithTenant);
 
     res.status(201).json({
       success: true,
@@ -37,7 +52,7 @@ const createJob = async (req, res) => {
   }
 };
 
-// Update job step
+// Update job step (tenant-aware with security check)
 const updateJobStep = async (req, res) => {
   try {
     const { step } = req.params;
@@ -49,6 +64,16 @@ const updateJobStep = async (req, res) => {
         success: false,
         message: 'Job not found'
       });
+    }
+
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Job does not belong to your company'
+        });
+      }
     }
 
     // Check if user is the creator
@@ -113,7 +138,7 @@ const updateJobStep = async (req, res) => {
   }
 };
 
-// Get all jobs with filters
+// Get all jobs with filters (tenant-aware)
 const getJobs = async (req, res) => {
   try {
     const {
@@ -127,7 +152,44 @@ const getJobs = async (req, res) => {
     } = req.query;
 
     // Build filter object
-    const filter = { isPublished: true };
+    const baseFilter = { isPublished: true };
+
+    // Add tenant filter if tenant context exists
+    // If no tenant context, return empty list (or public jobs if feature exists)
+    if (!req.tenant || !req.tenantId) {
+      // Log in development for debugging
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[getJobs] No tenant context detected:', {
+          hasTenant: !!req.tenant,
+          hasTenantId: !!req.tenantId,
+          hostname: req.get('host'),
+          subdomainHeader: req.get('x-tenant-subdomain'),
+        });
+      }
+      // No tenant context - return empty list to prevent cross-tenant data leaks
+      return res.json({
+        success: true,
+        jobs: [],
+        pagination: {
+          current: parseInt(page),
+          pages: 0,
+          total: 0
+        }
+      });
+    }
+
+    // Apply tenant filter
+    const filter = addTenantFilter(baseFilter, req);
+    
+    // Log in development for debugging
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[getJobs] Tenant context detected:', {
+        tenantName: req.tenant?.name,
+        tenantSubdomain: req.tenant?.subdomain,
+        tenantId: req.tenantId?.toString(),
+        filter: filter,
+      });
+    }
 
     if (q) {
       filter.$or = [
@@ -182,7 +244,7 @@ const getJobs = async (req, res) => {
   }
 };
 
-// Get job by ID
+// Get job by ID (tenant-aware with security check)
 const getJobById = async (req, res) => {
   try {
     const job = await Job.findById(req.params.id)
@@ -194,6 +256,25 @@ const getJobById = async (req, res) => {
         message: 'Job not found'
       });
     }
+
+    // Tenant isolation: Check if job belongs to current tenant
+    // If tenant context exists, enforce strict isolation
+    if (req.tenant && req.tenantId) {
+      // Verify job belongs to this tenant
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Job does not belong to your company'
+        });
+      }
+    } else if (job.tenantId) {
+      // Job has tenantId but no tenant context in request - deny access
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Job is company-specific and requires tenant context'
+      });
+    }
+    // If no tenant context and job has no tenantId, allow access (backward compatibility)
 
     res.json({
       success: true,
@@ -208,7 +289,7 @@ const getJobById = async (req, res) => {
   }
 };
 
-// Update job
+// Update job (tenant-aware with security check)
 const updateJob = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -229,6 +310,16 @@ const updateJob = async (req, res) => {
       });
     }
 
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Job does not belong to your company'
+        });
+      }
+    }
+
     // Check if user is the creator
     if (job.createdBy.toString() !== req.user._id.toString()) {
       return res.status(403).json({
@@ -237,9 +328,13 @@ const updateJob = async (req, res) => {
       });
     }
 
+    // Prevent tenantId from being changed via update payload
+    const updateData = { ...req.body };
+    delete updateData.tenantId; // tenantId should never come from frontend
+
     const updatedJob = await Job.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true, runValidators: true }
     );
 
@@ -257,7 +352,7 @@ const updateJob = async (req, res) => {
   }
 };
 
-// Publish job
+// Publish job (tenant-aware with security check)
 const publishJob = async (req, res) => {
   try {
     const { publishedOn } = req.body;
@@ -269,6 +364,16 @@ const publishJob = async (req, res) => {
         success: false,
         message: 'Job not found'
       });
+    }
+
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Job does not belong to your company'
+        });
+      }
     }
 
     // Check if user is the creator
@@ -296,7 +401,7 @@ const publishJob = async (req, res) => {
   }
 };
 
-// Close job
+// Close job (tenant-aware with security check)
 const closeJob = async (req, res) => {
   try {
     const job = await Job.findById(req.params.id);
@@ -306,6 +411,16 @@ const closeJob = async (req, res) => {
         success: false,
         message: 'Job not found'
       });
+    }
+
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Job does not belong to your company'
+        });
+      }
     }
 
     // Check if user is the creator
@@ -332,7 +447,7 @@ const closeJob = async (req, res) => {
   }
 };
 
-// Archive job
+// Archive job (tenant-aware with security check)
 const archiveJob = async (req, res) => {
   try {
     const job = await Job.findById(req.params.id);
@@ -342,6 +457,16 @@ const archiveJob = async (req, res) => {
         success: false,
         message: 'Job not found'
       });
+    }
+
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Job does not belong to your company'
+        });
+      }
     }
 
     // Check if user is the creator
@@ -368,7 +493,7 @@ const archiveJob = async (req, res) => {
   }
 };
 
-// Delete job
+// Delete job (tenant-aware with security check)
 const deleteJob = async (req, res) => {
   try {
     const job = await Job.findById(req.params.id);
@@ -378,6 +503,16 @@ const deleteJob = async (req, res) => {
         success: false,
         message: 'Job not found'
       });
+    }
+
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Job does not belong to your company'
+        });
+      }
     }
 
     // Check if user is the creator
@@ -413,17 +548,20 @@ const deleteJob = async (req, res) => {
   }
 };
 
-// Get jobs created by admin
+// Get jobs created by admin (tenant-aware)
 const getAdminJobs = async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
 
-    const filter = { createdBy: req.user._id };
+    const baseFilter = { createdBy: req.user._id };
     if (status === 'published') {
-      filter.isPublished = true;
+      baseFilter.isPublished = true;
     } else if (status === 'draft') {
-      filter.isPublished = false;
+      baseFilter.isPublished = false;
     }
+
+    // Add tenant filter if tenant context exists
+    const filter = addTenantFilter(baseFilter, req);
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -508,7 +646,7 @@ const getAdminJobs = async (req, res) => {
   }
 };
 
-// Get applications for a job or all applications
+// Get applications for a job or all applications (tenant-aware)
 const getJobApplications = async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
@@ -517,8 +655,10 @@ const getJobApplications = async (req, res) => {
     let filter = {};
     
     if (req.params.id === 'all') {
-      // Get all jobs created by this admin
-      const adminJobs = await Job.find({ createdBy: req.user._id }).select('_id');
+      // Get all jobs created by this admin, filtered by tenant
+      const baseJobFilter = { createdBy: req.user._id };
+      const jobFilter = addTenantFilter(baseJobFilter, req);
+      const adminJobs = await Job.find(jobFilter).select('_id');
       const jobIds = adminJobs.map(job => job._id);
       
       if (jobIds.length === 0) {
@@ -536,7 +676,25 @@ const getJobApplications = async (req, res) => {
       
       filter = { jobId: { $in: jobIds } };
     } else {
-      // Specific job ID
+      // Specific job ID - verify job belongs to tenant
+      const job = await Job.findById(req.params.id);
+      if (!job) {
+        return res.status(404).json({
+          success: false,
+          message: 'Job not found'
+        });
+      }
+
+      // Tenant isolation: Verify job belongs to current tenant
+      if (req.tenant && req.tenantId) {
+        if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: Job does not belong to your company'
+          });
+        }
+      }
+
       filter = { jobId: req.params.id };
     }
     
@@ -594,10 +752,17 @@ const getJobApplications = async (req, res) => {
   }
 };
 
-// Get job statistics
+// Get job statistics (tenant-aware)
 const getJobStats = async (req, res) => {
   try {
+    // Build base filter with tenant context
+    const baseFilter = {};
+    const filter = addTenantFilter(baseFilter, req);
+
     const stats = await Job.aggregate([
+      {
+        $match: filter // Apply tenant filter
+      },
       {
         $group: {
           _id: '$status',
@@ -606,9 +771,11 @@ const getJobStats = async (req, res) => {
       }
     ]);
 
-    const totalJobs = await Job.countDocuments();
-    const publishedJobs = await Job.countDocuments({ isPublished: true });
-    const draftJobs = await Job.countDocuments({ status: 'draft' });
+    const totalJobs = await Job.countDocuments(filter);
+    const publishedFilter = addTenantFilter({ isPublished: true }, req);
+    const publishedJobs = await Job.countDocuments(publishedFilter);
+    const draftFilter = addTenantFilter({ status: 'draft' }, req);
+    const draftJobs = await Job.countDocuments(draftFilter);
 
     res.json({
       success: true,
@@ -628,7 +795,7 @@ const getJobStats = async (req, res) => {
   }
 };
 
-// Search jobs with advanced filters
+// Search jobs with advanced filters (tenant-aware)
 const searchJobs = async (req, res) => {
   try {
     const {
@@ -647,7 +814,24 @@ const searchJobs = async (req, res) => {
     } = req.query;
 
     // Build filter object
-    const filter = { isPublished: true, status: 'published' };
+    const baseFilter = { isPublished: true, status: 'published' };
+
+    // Add tenant filter if tenant context exists
+    // If no tenant context, return empty list to prevent cross-tenant data leaks
+    if (!req.tenant || !req.tenantId) {
+      return res.json({
+        success: true,
+        jobs: [],
+        pagination: {
+          current: parseInt(page),
+          pages: 0,
+          total: 0
+        }
+      });
+    }
+
+    // Apply tenant filter
+    const filter = addTenantFilter(baseFilter, req);
 
     if (q) {
       filter.$or = [
@@ -713,10 +897,13 @@ const searchJobs = async (req, res) => {
   }
 };
 
-// Get job titles only (lightweight endpoint for filtering)
+// Get job titles only (lightweight endpoint for filtering, tenant-aware)
 const getJobTitles = async (req, res) => {
   try {
-    const jobs = await Job.find({ createdBy: req.user._id })
+    const baseFilter = { createdBy: req.user._id };
+    const filter = addTenantFilter(baseFilter, req);
+
+    const jobs = await Job.find(filter)
       .select('_id title')
       .sort({ createdAt: -1 })
       .lean();

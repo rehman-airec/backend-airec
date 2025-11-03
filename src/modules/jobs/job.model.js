@@ -232,6 +232,14 @@ const jobSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Admin',
     required: true
+  },
+  // Multi-tenant support: tenantId links job to a specific tenant
+  // Optional to maintain backward compatibility with existing single-tenant data
+  tenantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tenant',
+    index: true,
+    required: false // Optional for backward compatibility
   }
 }, {
   timestamps: true
@@ -291,6 +299,9 @@ jobSchema.index({ createdBy: 1 });
 jobSchema.index({ publishedAt: -1 });
 jobSchema.index({ applicationDeadline: 1 });
 jobSchema.index({ tags: 1 });
+jobSchema.index({ tenantId: 1 }); // Multi-tenant index for efficient tenant-based queries
+jobSchema.index({ tenantId: 1, createdAt: -1 }); // Composite index for tenant jobs sorted by creation date
+jobSchema.index({ tenantId: 1, isPublished: 1, status: 1 }); // Composite index for tenant published jobs
 
 module.exports = mongoose.model('Job', jobSchema);
 

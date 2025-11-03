@@ -19,6 +19,14 @@ const adminSchema = new mongoose.Schema({
     trim: true,
     match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
   },
+  // Multi-tenant support: tenantId links admin to a specific tenant
+  // Optional to maintain backward compatibility with existing single-tenant data
+  tenantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tenant',
+    index: true,
+    required: false // Optional for backward compatibility
+  },
   password: {
     type: String,
     required: [true, 'Password is required'],
@@ -35,8 +43,14 @@ const adminSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['superadmin', 'recruiter'],
+    enum: ['superadmin', 'admin', 'recruiter', 'employee'],
     default: 'recruiter'
+  },
+  // Track who created this user (for audit trail)
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin',
+    required: false
   },
   isActive: {
     type: Boolean,
@@ -85,6 +99,26 @@ const candidateSchema = new mongoose.Schema({
     lowercase: true,
     trim: true,
     match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
+  },
+  // Multi-tenant support: tenantId links candidate to a specific tenant
+  // Optional to maintain backward compatibility with existing single-tenant data
+  tenantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tenant',
+    index: true,
+    required: false // Optional for backward compatibility
+  },
+  // Role for candidates (candidate or employee)
+  role: {
+    type: String,
+    enum: ['candidate', 'employee'],
+    default: 'candidate'
+  },
+  // Track who created this user (for audit trail)
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin',
+    required: false
   },
   password: {
     type: String,
@@ -202,6 +236,8 @@ adminSchema.methods.clearPasswordReset = function() {
 
 adminSchema.index({ role: 1 });
 adminSchema.index({ isActive: 1 });
+adminSchema.index({ tenantId: 1 }); // Multi-tenant index for efficient tenant-based queries
+adminSchema.index({ tenantId: 1, role: 1 }); // Composite index for tenant + role queries
 
 // Candidate Methods
 candidateSchema.pre('save', async function(next) {
@@ -259,6 +295,9 @@ candidateSchema.methods.removeSavedJob = function(jobId) {
 candidateSchema.index({ isActive: 1 });
 candidateSchema.index({ totalExperience: 1 });
 candidateSchema.index({ 'profile.skills': 1 });
+candidateSchema.index({ tenantId: 1 }); // Multi-tenant index for efficient tenant-based queries
+candidateSchema.index({ tenantId: 1, role: 1 }); // Composite index for tenant + role queries
+candidateSchema.index({ tenantId: 1, role: 1, isActive: 1 }); // Composite index for employee queries (tenantId + role + isActive)
 
 module.exports = {
   Admin: mongoose.models.Admin || mongoose.model('Admin', adminSchema),

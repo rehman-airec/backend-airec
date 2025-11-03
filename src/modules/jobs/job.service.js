@@ -1,6 +1,7 @@
 const Job = require('./job.model');
 const JobUtils = require('./job.utils');
 const Application = require('../application/application.model');
+const { addTenantFilter, ensureTenantId } = require('../../utils/tenantQueryHelper');
 
 /**
  * Job Service
@@ -11,8 +12,11 @@ class JobService {
   
   /**
    * Create a new job
+   * @param {Object} jobData - Job data
+   * @param {String} userId - User ID creating the job
+   * @param {Object} req - Express request object (optional, for tenant context)
    */
-  static async createJob(jobData, userId) {
+  static async createJob(jobData, userId, req = null) {
     // Validate application deadline
     if (jobData.applicationDeadline) {
       JobUtils.validateApplicationDeadline(jobData.applicationDeadline);
@@ -23,24 +27,38 @@ class JobService {
       JobUtils.validateApplicationLimit(jobData.maxApplications);
     }
 
-    // Create job
-    const job = await Job.create({
+    // Create job with tenantId if tenant context exists
+    const jobWithTenant = ensureTenantId({
       ...jobData,
       createdBy: userId,
       status: 'draft'
-    });
+    }, req);
+
+    const job = await Job.create(jobWithTenant);
 
     return job;
   }
 
   /**
-   * Update job step
+   * Update job step (tenant-aware)
+   * @param {String} jobId - Job ID
+   * @param {String} step - Step number
+   * @param {Object} stepData - Step data
+   * @param {String} userId - User ID
+   * @param {Object} req - Express request object (optional, for tenant context)
    */
-  static async updateJobStep(jobId, step, stepData, userId) {
+  static async updateJobStep(jobId, step, stepData, userId, req = null) {
     const job = await Job.findById(jobId);
     
     if (!job) {
       throw new Error('Job not found');
+    }
+
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req && req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        throw new Error('Forbidden: Job does not belong to your company');
+      }
     }
 
     // Check if user is the creator
@@ -88,9 +106,11 @@ class JobService {
   }
 
   /**
-   * Get job by ID
+   * Get job by ID (tenant-aware)
+   * @param {String} jobId - Job ID
+   * @param {Object} req - Express request object (optional, for tenant context)
    */
-  static async getJobById(jobId) {
+  static async getJobById(jobId, req = null) {
     const job = await Job.findById(jobId)
       .populate('createdBy', 'name email');
 
@@ -98,21 +118,45 @@ class JobService {
       throw new Error('Job not found');
     }
 
+    // Tenant isolation: Verify job belongs to current tenant if tenant context exists
+    if (req && req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        throw new Error('Forbidden: Job does not belong to your company');
+      }
+    } else if (job.tenantId && req) {
+      // Job has tenantId but no tenant context - deny access
+      throw new Error('Forbidden: Job is company-specific and requires tenant context');
+    }
+
     return job;
   }
 
   /**
-   * Update job
+   * Update job (tenant-aware)
+   * @param {String} jobId - Job ID
+   * @param {Object} updateData - Update data
+   * @param {String} userId - User ID
+   * @param {Object} req - Express request object (optional, for tenant context)
    */
-  static async updateJob(jobId, updateData, userId) {
+  static async updateJob(jobId, updateData, userId, req = null) {
     const job = await Job.findById(jobId);
     
     if (!job) {
       throw new Error('Job not found');
     }
 
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req && req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        throw new Error('Forbidden: Job does not belong to your company');
+      }
+    }
+
     // Check if user is the creator
     JobUtils.validateJobOwnership(job, userId);
+
+    // Prevent tenantId from being changed
+    delete updateData.tenantId;
 
     // Validate if updating critical fields
     if (updateData.applicationDeadline) {
@@ -132,13 +176,23 @@ class JobService {
   }
 
   /**
-   * Delete job
+   * Delete job (tenant-aware)
+   * @param {String} jobId - Job ID
+   * @param {String} userId - User ID
+   * @param {Object} req - Express request object (optional, for tenant context)
    */
-  static async deleteJob(jobId, userId) {
+  static async deleteJob(jobId, userId, req = null) {
     const job = await Job.findById(jobId);
     
     if (!job) {
       throw new Error('Job not found');
+    }
+
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req && req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        throw new Error('Forbidden: Job does not belong to your company');
+      }
     }
 
     // Check if user is the creator
@@ -159,13 +213,24 @@ class JobService {
   // ============ Job Status Operations ============
 
   /**
-   * Publish job
+   * Publish job (tenant-aware)
+   * @param {String} jobId - Job ID
+   * @param {Array} publishedOn - Job boards
+   * @param {String} userId - User ID
+   * @param {Object} req - Express request object (optional, for tenant context)
    */
-  static async publishJob(jobId, publishedOn, userId) {
+  static async publishJob(jobId, publishedOn, userId, req = null) {
     const job = await Job.findById(jobId);
     
     if (!job) {
       throw new Error('Job not found');
+    }
+
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req && req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        throw new Error('Forbidden: Job does not belong to your company');
+      }
     }
 
     // Check if user is the creator
@@ -177,13 +242,23 @@ class JobService {
   }
 
   /**
-   * Close job
+   * Close job (tenant-aware)
+   * @param {String} jobId - Job ID
+   * @param {String} userId - User ID
+   * @param {Object} req - Express request object (optional, for tenant context)
    */
-  static async closeJob(jobId, userId) {
+  static async closeJob(jobId, userId, req = null) {
     const job = await Job.findById(jobId);
     
     if (!job) {
       throw new Error('Job not found');
+    }
+
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req && req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        throw new Error('Forbidden: Job does not belong to your company');
+      }
     }
 
     // Check if user is the creator
@@ -195,13 +270,23 @@ class JobService {
   }
 
   /**
-   * Archive job
+   * Archive job (tenant-aware)
+   * @param {String} jobId - Job ID
+   * @param {String} userId - User ID
+   * @param {Object} req - Express request object (optional, for tenant context)
    */
-  static async archiveJob(jobId, userId) {
+  static async archiveJob(jobId, userId, req = null) {
     const job = await Job.findById(jobId);
     
     if (!job) {
       throw new Error('Job not found');
+    }
+
+    // Tenant isolation: Verify job belongs to current tenant
+    if (req && req.tenant && req.tenantId) {
+      if (!job.tenantId || job.tenantId.toString() !== req.tenantId.toString()) {
+        throw new Error('Forbidden: Job does not belong to your company');
+      }
     }
 
     // Check if user is the creator
@@ -215,12 +300,29 @@ class JobService {
   // ============ Job Listing Operations ============
 
   /**
-   * Get all jobs with filters
+   * Get all jobs with filters (tenant-aware)
+   * @param {Object} filters - Filter criteria
+   * @param {Object} pagination - Pagination options
+   * @param {Object} req - Express request object (optional, for tenant context)
    */
-  static async getAllJobs(filters = {}, pagination = {}) {
+  static async getAllJobs(filters = {}, pagination = {}, req = null) {
     const { page = 1, limit = 10 } = pagination;
 
-    const filter = JobUtils.buildJobFilter(filters);
+    const baseFilter = JobUtils.buildJobFilter(filters);
+    
+    // If tenant context is required but missing, return empty result
+    if (req && (!req.tenant || !req.tenantId)) {
+      return {
+        jobs: [],
+        pagination: {
+          current: parseInt(page),
+          pages: 0,
+          total: 0
+        }
+      };
+    }
+    
+    const filter = addTenantFilter(baseFilter, req); // Add tenant filter if tenant context exists
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const jobs = await Job.find(filter)
@@ -243,17 +345,22 @@ class JobService {
 
   /**
    * Get admin jobs
+   * @param {String} userId - Admin user ID
+   * @param {Object} filters - Filter criteria
+   * @param {Object} pagination - Pagination options
+   * @param {Object} req - Express request object (optional, for tenant context)
    */
-  static async getAdminJobs(userId, filters = {}, pagination = {}) {
+  static async getAdminJobs(userId, filters = {}, pagination = {}, req = null) {
     const { page = 1, limit = 10, status } = filters;
 
-    const filter = { createdBy: userId };
+    const baseFilter = { createdBy: userId };
     if (status === 'published') {
-      filter.isPublished = true;
+      baseFilter.isPublished = true;
     } else if (status === 'draft') {
-      filter.isPublished = false;
+      baseFilter.isPublished = false;
     }
 
+    const filter = addTenantFilter(baseFilter, req); // Add tenant filter if tenant context exists
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const jobs = await Job.find(filter)
@@ -274,10 +381,18 @@ class JobService {
   }
 
   /**
-   * Get job statistics
+   * Get job statistics (tenant-aware)
+   * @param {Object} req - Express request object (optional, for tenant context)
    */
-  static async getJobStats() {
+  static async getJobStats(req = null) {
+    // Build base filter with tenant context
+    const baseFilter = {};
+    const filter = addTenantFilter(baseFilter, req);
+
     const stats = await Job.aggregate([
+      {
+        $match: filter // Apply tenant filter
+      },
       {
         $group: {
           _id: '$status',
@@ -286,9 +401,11 @@ class JobService {
       }
     ]);
 
-    const totalJobs = await Job.countDocuments();
-    const publishedJobs = await Job.countDocuments({ isPublished: true });
-    const draftJobs = await Job.countDocuments({ status: 'draft' });
+    const totalJobs = await Job.countDocuments(filter);
+    const publishedFilter = addTenantFilter({ isPublished: true }, req);
+    const publishedJobs = await Job.countDocuments(publishedFilter);
+    const draftFilter = addTenantFilter({ status: 'draft' }, req);
+    const draftJobs = await Job.countDocuments(draftFilter);
 
     return {
       total: totalJobs,

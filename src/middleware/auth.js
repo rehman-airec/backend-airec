@@ -58,6 +58,21 @@ const auth = async (req, res, next) => {
       });
     }
 
+    // Multi-tenant: If tenant context exists, verify user belongs to that tenant
+    // Exception: superadmin can access any tenant
+    if (req.tenant && req.tenantId) {
+      // Superadmin can bypass tenant check
+      if (user.role === 'superadmin') {
+        // Superadmin allowed - continue
+      } else if (!user.tenantId || user.tenantId.toString() !== req.tenantId.toString()) {
+        // User doesn't belong to this tenant
+        return res.status(403).json({ 
+          success: false,
+          message: 'Access denied: User does not belong to this tenant' 
+        });
+      }
+    }
+
     req.user = user;
     req.userType = decoded.userType;
     req.userId = decoded.userId;
@@ -141,9 +156,20 @@ const optionalAuth = async (req, res, next) => {
     }
 
     if (user && user.isActive) {
-      req.user = user;
-      req.userType = decoded.userType;
-      req.userId = decoded.userId;
+      // Multi-tenant: If tenant context exists, verify user belongs to that tenant
+      // Exception: superadmin can access any tenant
+      if (req.tenant && req.tenantId) {
+        if (user.role === 'superadmin' || (user.tenantId && user.tenantId.toString() === req.tenantId.toString())) {
+          req.user = user;
+          req.userType = decoded.userType;
+          req.userId = decoded.userId;
+        }
+      } else {
+        // No tenant context, proceed normally
+        req.user = user;
+        req.userType = decoded.userType;
+        req.userId = decoded.userId;
+      }
     }
     
     next();

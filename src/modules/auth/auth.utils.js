@@ -38,10 +38,14 @@ class AuthUtils {
   }
 
   /**
-   * Generate token pair (access + refresh)
+   * Generate token pair (access + refresh) with role and tenantId
+   * @param {string} userId - User ID
+   * @param {string} userType - User type ('admin' or 'candidate')
+   * @param {string} role - User role ('superadmin', 'recruiter', 'candidate', 'employee')
+   * @param {string} tenantId - Optional tenant ID
    */
-  static generateTokens(userId, userType) {
-    return JWTService.generateTokenPair(userId, userType);
+  static generateTokens(userId, userType, role = null, tenantId = null) {
+    return JWTService.generateTokenPair(userId, userType, role, tenantId);
   }
 
   /**
@@ -50,9 +54,11 @@ class AuthUtils {
   static formatAdminResponse(admin) {
     return {
       id: admin._id,
+      _id: admin._id,
       name: admin.name,
       email: admin.email,
       role: admin.role,
+      tenantId: admin.tenantId || null,
       createdAt: admin.createdAt,
       lastLogin: admin.lastLogin
     };
@@ -64,10 +70,13 @@ class AuthUtils {
   static formatCandidateResponse(candidate) {
     return {
       id: candidate._id,
+      _id: candidate._id,
       firstName: candidate.firstName,
       lastName: candidate.lastName,
       email: candidate.email,
       phone: candidate.phone,
+      role: candidate.role || 'candidate',
+      tenantId: candidate.tenantId || null,
       totalExperience: candidate.totalExperience,
       linkedinUrl: candidate.linkedinUrl,
       createdAt: candidate.createdAt,
